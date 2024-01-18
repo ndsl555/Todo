@@ -69,9 +69,41 @@ namespace Todo.Controllers
 
         // POST api/<TodoUploadFileController>
         [HttpPost]
-        public void Post(Guid TodoId ,[FromBody] string value)
+        public string Post(Guid TodoId ,[FromBody] UploadFilePostDto value)
         {
+            if (!_todoContext.TodoLists.Any(a => a.TodoId == TodoId))
+            {
+                return "找不到該事項";
+            }
+            UploadFile insert = new UploadFile
+            {
+                Name = value.Name,
+                Src = value.Src,
+                TodoId = TodoId
+            };
+            _todoContext.UploadFiles.Add(insert);
+            _todoContext.SaveChanges();
+            return "ok";
         }
+
+        // POST api/<TodoUploadFileController>
+        [HttpPost("AutoMapper")]
+        public string PostAutoMapper(Guid TodoId, [FromBody] UploadFilePostDto value)
+        {
+            if (!_todoContext.TodoLists.Any(a => a.TodoId == TodoId))
+            {
+                return "找不到該事項";
+            }
+
+            var map = _mapper.Map<UploadFile>(value);
+
+            map.TodoId = TodoId;
+
+            _todoContext.UploadFiles.Add(map);
+            _todoContext.SaveChanges();
+            return "ok";
+        }
+
 
         // PUT api/<TodoUploadFileController>/5
         [HttpPut("{id}")]

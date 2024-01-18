@@ -21,6 +21,8 @@ namespace Todo.Profiles
                 dest => dest.UpdateEmployeeName,
                 opt => opt.MapFrom(src => src.UpdateEmployee.Name + "(" + src.UpdateEmployeeId + ")")
                 );
+            CreateMap<TodoListPostDto, TodoList>();
+
         }
     }
 }

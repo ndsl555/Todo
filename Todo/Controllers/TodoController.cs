@@ -192,10 +192,43 @@ namespace Todo.Controllers
 
         // POST api/<TodoController>
         [HttpPost]
-        public string Post([FromBody] string value)
+        public void Post([FromBody] TodoListPostDto value)
         {
-            return "value";
+
+            TodoList insert = new TodoList
+            {
+                UpdateTime = DateTime.Now,
+                InsertTime = DateTime.Now,
+                InsertEmployeeId = Guid.Parse("00000000-0000-0000-0000-000000000001"),
+                UpdateEmployeeId = Guid.Parse("00000000-0000-0000-0000-000000000001"),
+            };
+
+            _todoContext.TodoLists.Add(insert).CurrentValues.SetValues(value);
+            _todoContext.SaveChanges();
+            foreach (var temp in value.UploadFiles)
+            {
+                _todoContext.UploadFiles.Add(new UploadFile
+                {
+                    TodoId = insert.TodoId
+                }).CurrentValues.SetValues(temp);
+            }
+            _todoContext.SaveChanges();
         }
+
+        [HttpPost("AutoMapper")]
+        public void PostAutoMapper([FromBody] TodoListPostDto value)
+        {
+            var map = _mapper.Map<TodoList>(value);
+
+            map.InsertTime = DateTime.Now;
+            map.UpdateTime = DateTime.Now;
+            map.InsertEmployeeId = Guid.Parse("00000000-0000-0000-0000-000000000001");
+            map.UpdateEmployeeId = Guid.Parse("00000000-0000-0000-0000-000000000001");
+
+            _todoContext.TodoLists.Add(map);
+            _todoContext.SaveChanges();
+        }
+
 
         // PUT api/<TodoController>/5
         [HttpPut("{id}")]
