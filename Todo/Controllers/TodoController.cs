@@ -232,8 +232,44 @@ namespace Todo.Controllers
 
         // PUT api/<TodoController>/5
         [HttpPut("{id}")]
-        public void Put(int id, [FromBody] string value)
+        public void Put(Guid id, [FromBody] TodoListPutDto value)
         {
+            //_todoContext.TodoLists.Update(value);
+            //_todoContext.SaveChanges();
+            //var update = _todoContext.TodoLists.Find(id);
+
+            var update = (from a in _todoContext.TodoLists
+                         where a.TodoId == id
+                         select a).SingleOrDefault();
+            if (update != null)
+            {
+                update.InsertTime = DateTime.Now;
+                update.UpdateTime = DateTime.Now;
+                update.InsertEmployeeId = Guid.Parse("00000000-0000-0000-0000-000000000001");
+                update.UpdateEmployeeId = Guid.Parse("00000000-0000-0000-0000-000000000001");
+                //update.Name = value.Name;
+                //update.Orders = value.Orders;
+                //update.Enable=value.Enable;
+                _todoContext.Update(update).CurrentValues.SetValues(value);
+                _todoContext.SaveChanges();
+            }
+        }
+
+        [HttpPut("AutoMapper/{id}")]
+        public void PutAutoMapper(Guid id, [FromBody] TodoListPutDto value)
+        {
+            //_todoContext.TodoLists.Update(value);
+            //_todoContext.SaveChanges();
+            //var update = _todoContext.TodoLists.Find(id);
+
+            var update = (from a in _todoContext.TodoLists
+                          where a.TodoId == id
+                          select a).SingleOrDefault();
+            if (update != null)
+            {
+                _mapper.Map(value, update);
+                _todoContext.SaveChanges();
+            }
         }
 
         // DELETE api/<TodoController>/5

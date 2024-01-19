@@ -5,18 +5,17 @@ using System.Threading.Tasks;
 
 namespace Todo.Dtos
 {
-    public class TodoListPostDto
+    public class TodoListPutDto
     {
+        public Guid TodoId { get; set; }
         public string Name { get; set; }
         public bool Enable { get; set; }
         public int Orders { get; set; }
-
         public List<UploadFilePostDto> UploadFiles { get; set; }
 
-        public TodoListPostDto()
+        public TodoListPutDto()
         {
             UploadFiles = new List<UploadFilePostDto> { };
         }
-
     }
 }
