@@ -9,6 +9,9 @@ using Todo.Dtos;
 using Todo.Parameters;
 using Microsoft.EntityFrameworkCore;
 using AutoMapper;
+using Microsoft.Data.SqlClient;
+using Microsoft.AspNetCore.JsonPatch;
+using System.Text.Json;
 
 // For more information on enabling Web API for empty projects, visit https://go.microsoft.com/fwlink/?LinkID=397860
 
@@ -29,7 +32,7 @@ namespace Todo.Controllers
 
         // GET: api/<TodoController>
         [HttpGet]
-        public IEnumerable<TodoListSelectDto> Get([FromQuery] TodoSelectParameter value)
+        public IActionResult Get([FromQuery] TodoSelectParameter value)
         {
             var result = _todoContext.TodoLists
                 .Include(a => a.InsertEmployee)
@@ -57,37 +60,32 @@ namespace Todo.Controllers
                 result = result.Where(a => a.Orders >= value.minOrder && a.Orders <= value.maxOrder);
             }
 
+            if (result == null || result.Count() <= 0)
+            {
+                return NotFound("找不到資源");
+            }
 
-            return result.ToList().Select(a => ItemToDto(a));
+            return Ok(result.ToList().Select(a => ItemToDto(a)));
         }
 
         // GET api/Todo/1f3012b6-71ae-4e74-88fd-018ed53ed2d3
-        [HttpGet("{id}")]
-        public TodoListSelectDto Get(Guid id)
+        [HttpGet("{TodoId}")]
+        public ActionResult<TodoListSelectDto> GetOne(Guid TodoId)
         {
             var result = (from a in _todoContext.TodoLists
-                          where a.TodoId == id
-                          select new TodoListSelectDto
-                          {
-                              Enable = a.Enable,
-                              InsertEmployeeName = a.InsertEmployee.Name,
-                              InsertTime = a.InsertTime,
-                              Name = a.Name,
-                              Orders = a.Orders,
-                              TodoId = a.TodoId,
-                              UpdateEmployeeName = a.UpdateEmployee.Name,
-                              UpdateTime = a.UpdateTime,
-                              UploadFiles = (from b in _todoContext.UploadFiles
-                                             where a.TodoId == b.TodoId
-                                             select new UploadFileDto
-                                             {
-                                                 Name = b.Name,
-                                                 Src = b.Src,
-                                                 TodoId = b.TodoId.ToString(),
-                                                 UploadFileId = b.UploadFileId
-                                             }).ToList()
-                          }).SingleOrDefault();
-            return result;
+                          where a.TodoId == TodoId
+                          select a)
+                .Include(a => a.InsertEmployee)
+                .Include(a => a.UpdateEmployee)
+                .Include(a => a.UploadFiles)
+                .SingleOrDefault();
+
+            if (result == null)
+            {
+                return NotFound("找不到Id：" + TodoId + "的資料");
+            }
+
+            return ItemToDto(result);
         }
 
         [HttpGet("AutoMapper")]
@@ -183,35 +181,68 @@ namespace Todo.Controllers
                 sql = sql + " and name like N'%" + name + "%'";
             }
 
-            var result = _todoContext
-                .ExecSQL<TodoListSelectDto>(sql);
+            var result = _todoContext.ExecSQL<TodoListSelectDto>(sql);
 
             return result;
         }
 
-
         // POST api/<TodoController>
         [HttpPost]
-        public void Post([FromBody] TodoListPostDto value)
+        public IActionResult Post([FromBody] TodoListPostDto value)
         {
-
             TodoList insert = new TodoList
             {
-                UpdateTime = DateTime.Now,
                 InsertTime = DateTime.Now,
+                UpdateTime = DateTime.Now,
                 InsertEmployeeId = Guid.Parse("00000000-0000-0000-0000-000000000001"),
-                UpdateEmployeeId = Guid.Parse("00000000-0000-0000-0000-000000000001"),
+                UpdateEmployeeId = Guid.Parse("00000000-0000-0000-0000-000000000001")
             };
 
             _todoContext.TodoLists.Add(insert).CurrentValues.SetValues(value);
             _todoContext.SaveChanges();
+
+
             foreach (var temp in value.UploadFiles)
             {
-                _todoContext.UploadFiles.Add(new UploadFile
+                _todoContext.UploadFiles.Add(new UploadFile()
                 {
                     TodoId = insert.TodoId
                 }).CurrentValues.SetValues(temp);
             }
+            _todoContext.SaveChanges();
+
+            return CreatedAtAction(nameof(GetOne), new { TodoId = insert.TodoId }, insert);
+        }
+
+        [HttpPost("nofk")]
+        public void Postnofk([FromBody] TodoListPostDto value)
+        {
+
+            TodoList insert = new TodoList
+            {
+                Name = value.Name,
+                Enable = value.Enable,
+                Orders = value.Orders,
+                InsertTime = DateTime.Now,
+                UpdateTime = DateTime.Now,
+                InsertEmployeeId = Guid.Parse("00000000-0000-0000-0000-000000000001"),
+                UpdateEmployeeId = Guid.Parse("00000000-0000-0000-0000-000000000001")
+            };
+            _todoContext.TodoLists.Add(insert);
+            _todoContext.SaveChanges();
+
+            foreach (var temp in value.UploadFiles)
+            {
+                UploadFile insert2 = new UploadFile
+                {
+                    Name = temp.Name,
+                    Src = temp.Src,
+                    TodoId = insert.TodoId
+                };
+
+                _todoContext.UploadFiles.Add(insert2);
+            }
+
             _todoContext.SaveChanges();
         }
 
@@ -229,55 +260,166 @@ namespace Todo.Controllers
             _todoContext.SaveChanges();
         }
 
+        [HttpPost("postSQL")]
+        public void PostSQL([FromBody] TodoListPostDto value)
+        {
+            var name = new SqlParameter("name", value.Name);
+
+            string sql = @"INSERT INTO [dbo].[TodoList]
+           ([Name]
+           ,[InsertTime]
+           ,[UpdateTime]
+           ,[Enable]
+           ,[Orders]
+           ,[InsertEmployeeId]
+           ,[UpdateEmployeeId])
+     VALUES
+           (@name,'" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "','" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "','" + value.Enable + "'," + value.Orders + ",'00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000001')";
+
+            _todoContext.Database.ExecuteSqlRaw(sql, name);
+        }
 
         // PUT api/<TodoController>/5
         [HttpPut("{id}")]
-        public void Put(Guid id, [FromBody] TodoListPutDto value)
+        public IActionResult Put(Guid id, [FromBody] TodoListPutDto value)
+        {
+            if (id!=value.TodoId)
+            {
+                return BadRequest();
+            }
+            var update = (from a in _todoContext.TodoLists
+                          where a.TodoId == id
+                          select a).SingleOrDefault();
+
+            if (update != null)
+            {
+                update.UpdateTime = DateTime.Now;
+                update.UpdateEmployeeId = Guid.Parse("00000000-0000-0000-0000-000000000001");
+
+                //update.Name = value.Name;
+                //update.Orders = value.Orders;
+                //update.Enable = value.Enable;
+
+                _todoContext.TodoLists.Update(update).CurrentValues.SetValues(value);
+
+                _todoContext.SaveChanges();
+            }
+            else
+            {
+                return NotFound();
+            }
+            return NoContent();
+        }
+
+        [HttpPut]
+        public void Put([FromBody] TodoListPutDto value)
         {
             //_todoContext.TodoLists.Update(value);
             //_todoContext.SaveChanges();
-            //var update = _todoContext.TodoLists.Find(id);
 
+            // var update = _todoContext.TodoLists.Find(id);
             var update = (from a in _todoContext.TodoLists
-                         where a.TodoId == id
-                         select a).SingleOrDefault();
+                          where a.TodoId == value.TodoId
+                          select a).SingleOrDefault();
+
             if (update != null)
             {
-                update.InsertTime = DateTime.Now;
                 update.UpdateTime = DateTime.Now;
-                update.InsertEmployeeId = Guid.Parse("00000000-0000-0000-0000-000000000001");
                 update.UpdateEmployeeId = Guid.Parse("00000000-0000-0000-0000-000000000001");
-                //update.Name = value.Name;
-                //update.Orders = value.Orders;
-                //update.Enable=value.Enable;
-                _todoContext.Update(update).CurrentValues.SetValues(value);
+
+                update.Name = value.Name;
+                update.Orders = value.Orders;
+                update.Enable = value.Enable;
                 _todoContext.SaveChanges();
             }
         }
 
+        // PUT api/<TodoController>/5
         [HttpPut("AutoMapper/{id}")]
         public void PutAutoMapper(Guid id, [FromBody] TodoListPutDto value)
         {
             //_todoContext.TodoLists.Update(value);
             //_todoContext.SaveChanges();
-            //var update = _todoContext.TodoLists.Find(id);
 
+            // var update = _todoContext.TodoLists.Find(id);
             var update = (from a in _todoContext.TodoLists
                           where a.TodoId == id
                           select a).SingleOrDefault();
+
             if (update != null)
             {
                 _mapper.Map(value, update);
+
                 _todoContext.SaveChanges();
             }
         }
 
-        // DELETE api/<TodoController>/5
-        [HttpDelete("{id}")]
-        public void Delete(int id)
+        [HttpPatch("{id}")]
+        public void Patch(Guid id, [FromBody] JsonPatchDocument value)
         {
+            var update = (from a in _todoContext.TodoLists
+                          where a.TodoId == id
+                          select a).SingleOrDefault();
+
+            if (update != null)
+            {
+                update.UpdateTime = DateTime.Now;
+                update.UpdateEmployeeId = Guid.Parse("00000000-0000-0000-0000-000000000001");
+
+                value.ApplyTo(update);
+
+                _todoContext.SaveChanges();
+            }
         }
 
+
+        /// DELETE api/<TodoController>/5
+        [HttpDelete("{id}")]
+        public IActionResult Delete(Guid id)
+        {
+            var delete = (from a in _todoContext.TodoLists
+                          where a.TodoId == id
+                          select a).Include(c => c.UploadFiles).SingleOrDefault();
+            if (delete == null)
+            {
+                return NotFound("找不到刪除的資源");
+            }
+            _todoContext.TodoLists.Remove(delete);
+            _todoContext.SaveChanges();
+            return NoContent();
+        }
+
+        [HttpDelete("nofk/{id}")]
+        public void NofkDelete(Guid id)
+        {
+            //先刪子資料再刪父資料
+            var child = (from a in _todoContext.UploadFiles
+                         where a.TodoId == id
+                         select a);
+            _todoContext.UploadFiles.RemoveRange(child);    
+            _todoContext.SaveChanges();
+
+            var delete = (from a in _todoContext.TodoLists
+                          where a.TodoId == id
+                          select a).Include(c => c.UploadFiles).SingleOrDefault();
+            if (delete != null)
+            {
+                _todoContext.TodoLists.Remove(delete);
+                _todoContext.SaveChanges();
+            }
+        }
+
+        [HttpDelete("list/{ids}")]
+        public List<Guid> Delete(string ids)
+        {
+            var deleteList = JsonSerializer.Deserialize<List<Guid>>(ids);
+            var delete = (from a in _todoContext.TodoLists
+                          where deleteList.Contains(a.TodoId)
+                          select a).Include(c => c.UploadFiles);
+            _todoContext.TodoLists.RemoveRange(delete);
+            _todoContext.SaveChanges();
+            return deleteList;
+        }
         private static TodoListSelectDto ItemToDto(TodoList a)
         {
             List<UploadFileDto> updto = new List<UploadFileDto>();

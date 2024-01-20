@@ -15,7 +15,7 @@ builder.Services.AddDbContext<TodoContext>(options => options.UseSqlServer(build
 builder.Services.AddAutoMapper(typeof(TodoListProfile), typeof(UploadFileProfile));
 
 // 添加控制器
-builder.Services.AddControllers();
+builder.Services.AddControllers().AddNewtonsoftJson();
 
 var app = builder.Build();
 
